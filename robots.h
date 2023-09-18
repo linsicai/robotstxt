@@ -42,25 +42,36 @@
 namespace googlebot {
 // Handler for directives found in robots.txt. These callbacks are called by
 // ParseRobotsTxt() in the sequence they have been found in the file.
+// 解析处理类
 class RobotsParseHandler {
  public:
+  // 默认构造函数
   RobotsParseHandler() {}
+
+  // 虚构函数
   virtual ~RobotsParseHandler() {}
 
   // Disallow copying and assignment.
+  // 关闭复制与赋值
   RobotsParseHandler(const RobotsParseHandler&) = delete;
   RobotsParseHandler& operator=(const RobotsParseHandler&) = delete;
 
+  // 开启与结束
   virtual void HandleRobotsStart() = 0;
   virtual void HandleRobotsEnd() = 0;
 
+  // 处理UA
   virtual void HandleUserAgent(int line_num, absl::string_view value) = 0;
+
+  // 开启与关闭
   virtual void HandleAllow(int line_num, absl::string_view value) = 0;
   virtual void HandleDisallow(int line_num, absl::string_view value) = 0;
 
+  // 站点地图
   virtual void HandleSitemap(int line_num, absl::string_view value) = 0;
 
   // Any other unrecognized name/value pairs.
+  // 未知的
   virtual void HandleUnknownAction(int line_num, absl::string_view action,
                                    absl::string_view value) = 0;
 };
@@ -70,6 +81,7 @@ class RobotsParseHandler {
 //
 // Note, this function will accept all kind of input but will skip
 // everything that does not look like a robots directive.
+// 解析文本，通过回调方式
 void ParseRobotsTxt(absl::string_view robots_body,
                     RobotsParseHandler* parse_callback);
 
@@ -98,21 +110,26 @@ class RobotsMatcher : protected RobotsParseHandler {
   // it's pretty obvious what the webmaster wants: they want to allow crawl of
   // every URI except /cgi-bin. However, according to the expired internet
   // standard, crawlers should be allowed to crawl everything with such a rule.
+  // 构造函数
   RobotsMatcher();
 
+  // 析构函数
   ~RobotsMatcher() override;
 
   // Disallow copying and assignment.
+  // 解析文本，通过回调方式
   RobotsMatcher(const RobotsMatcher&) = delete;
   RobotsMatcher& operator=(const RobotsMatcher&) = delete;
 
   // Verifies that the given user agent is valid to be matched against
   // robots.txt. Valid user agent strings only contain the characters
   // [a-zA-Z_-].
+  // 判定是否合法UA，非空且不包括异常字符
   static bool IsValidUserAgentToObey(absl::string_view user_agent);
 
   // Returns true iff 'url' is allowed to be fetched by any member of the
   // "user_agents" vector. 'url' must be %-encoded according to RFC3986.
+  // 判定是否可以爬取
   bool AllowedByRobots(absl::string_view robots_body,
                        const std::vector<std::string>* user_agents,
                        const std::string& url);
@@ -124,24 +141,29 @@ class RobotsMatcher : protected RobotsParseHandler {
                                const std::string& url);
 
   // Returns true if we are disallowed from crawling a matching URI.
+  // 是否禁止爬取
   bool disallow() const;
 
   // Returns true if we are disallowed from crawling a matching URI. Ignores any
   // rules specified for the default user agent, and bases its results only on
   // the specified user agents.
+  // 是否禁止爬取，忽略全局
   bool disallow_ignore_global() const;
 
   // Returns true iff, when AllowedByRobots() was called, the robots file
   // referred explicitly to one of the specified user agents.
+  // 曾经命中指定UA
   bool ever_seen_specific_agent() const;
 
   // Returns the line that matched or 0 if none matched.
+  // 返回命中行
   const int matching_line() const;
 
  protected:
   // Parse callbacks.
   // Protected because used in unittest. Never override RobotsMatcher, implement
   // googlebot::RobotsParseHandler instead.
+  // 回调函数
   void HandleRobotsStart() override;
   void HandleRobotsEnd() override {}
 
@@ -157,14 +179,17 @@ class RobotsMatcher : protected RobotsParseHandler {
   // Extract the matchable part of a user agent string, essentially stopping at
   // the first invalid character.
   // Example: 'Googlebot/2.1' becomes 'Googlebot'
+  // 提取UA，a-zA-Z_-
   static absl::string_view ExtractUserAgent(absl::string_view user_agent);
 
   // Initialize next path and user-agents to check. Path must contain only the
   // path, params, and query (if any) of the url and must start with a '/'.
+  // 初始化输入
   void InitUserAgentsAndPath(const std::vector<std::string>* user_agents,
                              const char* path);
 
   // Returns true if any user-agent was seen.
+  // 有指定过UA 吗
   bool seen_any_agent() const {
     return seen_global_agent_ || seen_specific_agent_;
   }
@@ -205,8 +230,8 @@ class RobotsMatcher : protected RobotsParseHandler {
     }
 
    private:
-    int priority_;
-    int line_;
+    int priority_;    // 优先级
+    int line_;        // 行数
   };
 
   // For each of the directives within user-agents, we keep global and specific
@@ -214,26 +239,35 @@ class RobotsMatcher : protected RobotsParseHandler {
   struct MatchHierarchy {
     Match global;            // Match for '*'
     Match specific;          // Match for queried agent.
+
     void Clear() {
       global.Clear();
       specific.Clear();
     }
   };
+  // 允许表
   MatchHierarchy allow_;       // Characters of 'url' matching Allow.
+
+  // 禁止表
   MatchHierarchy disallow_;    // Characters of 'url' matching Disallow.
 
-  bool seen_global_agent_;         // True if processing global agent rules.
-  bool seen_specific_agent_;       // True if processing our specific agent.
-  bool ever_seen_specific_agent_;  // True if we ever saw a block for our agent.
-  bool seen_separator_;            // True if saw any key: value pair.
+  // 状态
+  bool seen_global_agent_;         // True if processing global agent rules. 所有UA
+  bool seen_specific_agent_;       // True if processing our specific agent. 特定UA
+  bool ever_seen_specific_agent_;  // True if we ever saw a block for our agent. 曾经命中过特定UA
+  bool seen_separator_;            // True if saw any key: value pair. 命中前半部分
 
   // The path we want to pattern match. Not owned and only a valid pointer
   // during the lifetime of *AllowedByRobots calls.
+  // 输入的路径，预期是/开始
   const char* path_;
+
   // The User-Agents we are interested in. Not owned and only a valid
   // pointer during the lifetime of *AllowedByRobots calls.
+  // 输入的UA 列表
   const std::vector<std::string>* user_agents_;
 
+  // 命中策略
   RobotsMatchStrategy* match_strategy_;
 };
 

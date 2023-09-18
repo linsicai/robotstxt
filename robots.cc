@@ -36,6 +36,7 @@
 #include "absl/strings/string_view.h"
 
 // Allow for typos such as DISALOW in robots.txt.
+// 错别字
 static bool kAllowFrequentTypos = true;
 
 namespace googlebot {
@@ -52,17 +53,20 @@ namespace googlebot {
 //
 // match priority > 0:
 //    Match.
+// 命中策略基类
 class RobotsMatchStrategy {
  public:
+  // 纯虚构函数
   virtual ~RobotsMatchStrategy() {}
 
-  virtual int MatchAllow(absl::string_view path,
-                         absl::string_view pattern) = 0;
-  virtual int MatchDisallow(absl::string_view path,
-                            absl::string_view pattern) = 0;
+  // 接口
+  // 返回优先级
+  virtual int MatchAllow(absl::string_view path, absl::string_view pattern) = 0;
+  virtual int MatchDisallow(absl::string_view path, absl::string_view pattern) = 0;
 
  protected:
   // Implements robots.txt pattern matching.
+  // 通用函数
   static bool Matches(absl::string_view path, absl::string_view pattern);
 };
 
@@ -73,8 +77,10 @@ class RobotsMatchStrategy {
 // we make sure to have acceptable worst-case performance.
 /* static */ bool RobotsMatchStrategy::Matches(
     absl::string_view path, absl::string_view pattern) {
+  //
   const size_t pathlen = path.length();
   absl::FixedArray<size_t> pos(pathlen + 1);
+
   int numpos;
 
   // The pos[] array holds a sorted list of indexes of 'path', with length
@@ -87,17 +93,30 @@ class RobotsMatchStrategy {
   pos[0] = 0;
   numpos = 1;
 
+  // 遍历模式
   for (auto pat = pattern.begin(); pat != pattern.end(); ++pat) {
     if (*pat == '$' && pat + 1 == pattern.end()) {
+      // 如果
       return (pos[numpos - 1] == pathlen);
     }
+
     if (*pat == '*') {
+      // 2
+      //   3 4 5 6 ....
+      // 如果命中*，则所有都可以命中到，全部展开，等遇到下一个再做过滤
+      // /path/aa.html，
+      // /path/*.html，
+      // /path/，没有命中，下次过滤掉
+      // /path/a，没有命中，下次过滤掉
+      // /path/aa，没有命中，下次过滤掉
+      // /path/aa.命中，下次继续
       numpos = pathlen - pos[0] + 1;
       for (int i = 1; i < numpos; i++) {
         pos[i] = pos[i-1] + 1;
       }
     } else {
       // Includes '$' when not at end of pattern.
+      // 更新一下命中的前缀，如果下一个没有命中，就干掉
       int newnumpos = 0;
       for (int i = 0; i < numpos; i++) {
         if (pos[i] < pathlen && path[pos[i]] == *pat) {
@@ -105,10 +124,13 @@ class RobotsMatchStrategy {
         }
       }
       numpos = newnumpos;
+
+      // 一个前缀都没有命中了
       if (numpos == 0) return false;
     }
   }
 
+  // 命中
   return true;
 }
 
@@ -123,6 +145,7 @@ std::string GetPathParamsQuery(const std::string& url) {
   std::string path;
 
   // Initial two slashes are ignored.
+  // 处理一下两个/ 开头情况
   size_t search_start = 0;
   if (url.size() >= 2 && url[0] == '/' && url[1] == '/') search_start = 2;
 
@@ -130,19 +153,31 @@ std::string GetPathParamsQuery(const std::string& url) {
   size_t protocol_end = url.find("://", search_start);
   if (early_path < protocol_end) {
     // If path, param or query starts before ://, :// doesn't indicate protocol.
+    // 处理一下特殊情况
+    // /path/?a=b&c=http://
     protocol_end = std::string::npos;
   }
   if (protocol_end == std::string::npos) {
+    // 开始即路径
     protocol_end = search_start;
   } else {
+    // 协议位置认可，定位找路径
     protocol_end += 3;
   }
 
   size_t path_start = url.find_first_of("/?;", protocol_end);
   if (path_start != std::string::npos) {
+    // 找到路径
     size_t hash_pos = url.find('#', search_start);
-    if (hash_pos < path_start) return "/";
+    if (hash_pos < path_start) {
+      // 路径到hash 里面
+      return "/";
+    }
+
+    // 找到路径结束位置
     size_t path_end = (hash_pos == std::string::npos) ? url.size() : hash_pos;
+
+    // 开头自动补个/
     if (url[path_start] != '/') {
       // Prepend a slash if the result would start e.g. with '?'.
       return "/" + url.substr(path_start, path_end - path_start);
@@ -150,6 +185,7 @@ std::string GetPathParamsQuery(const std::string& url) {
     return url.substr(path_start, path_end - path_start);
   }
 
+  // 默认为根路径
   return "/";
 }
 
@@ -161,6 +197,7 @@ std::string GetPathParamsQuery(const std::string& url) {
 // When the function returns, (*dst) either points to src, or is newly
 // allocated.
 // Returns true if dst was newly allocated.
+// 做个转义？
 bool MaybeEscapePattern(const char* src, char** dst) {
   int num_to_escape = 0;
   bool need_capitalize = false;
@@ -171,37 +208,45 @@ bool MaybeEscapePattern(const char* src, char** dst) {
     if (src[i] == '%' &&
         absl::ascii_isxdigit(src[i+1]) && absl::ascii_isxdigit(src[i+2])) {
       if (absl::ascii_islower(src[i+1]) || absl::ascii_islower(src[i+2])) {
+        // 需要转大写
         need_capitalize = true;
       }
       i += 2;
     // (b) needs escaping.
     } else if (src[i] & 0x80) {
+      // 需要转数字？
       num_to_escape++;
     }
     // (c) Already escaped and escape-characters normalized (eg. %2f -> %2F).
   }
+
   // Return if no changes needed.
   if (!num_to_escape && !need_capitalize) {
+    // 不需要转义
     (*dst) = const_cast<char*>(src);
     return false;
   }
+
   (*dst) = new char[num_to_escape * 2 + strlen(src) + 1];
   int j = 0;
   for (int i = 0; src[i] != 0; i++) {
     // (a) Normalize %-escaped sequence (eg. %2f -> %2F).
     if (src[i] == '%' &&
         absl::ascii_isxdigit(src[i+1]) && absl::ascii_isxdigit(src[i+2])) {
+      // 转大写
       (*dst)[j++] = src[i++];
       (*dst)[j++] = absl::ascii_toupper(src[i++]);
       (*dst)[j++] = absl::ascii_toupper(src[i]);
       // (b) %-escape octets whose highest bit is set. These are outside the
       // ASCII range.
     } else if (src[i] & 0x80) {
+      // 特殊字符转义
       (*dst)[j++] = '%';
       (*dst)[j++] = kHexDigits[(src[i] >> 4) & 0xf];
       (*dst)[j++] = kHexDigits[src[i] & 0xf];
     // (c) Normal character, no modification needed.
     } else {
+      // 原文
       (*dst)[j++] = src[i];
     }
   }
@@ -217,20 +262,21 @@ namespace {
 // and represent them as an enumeration which allows for faster processing
 // afterwards.
 // For unparsable keys, the original string representation is kept.
+// 配置key
 class ParsedRobotsKey {
  public:
   enum KeyType {
     // Generic highlevel fields.
-    USER_AGENT,
-    SITEMAP,
+    USER_AGENT,   // UA
+    SITEMAP,      // 站点地图
 
     // Fields within a user-agent.
-    ALLOW,
-    DISALLOW,
+    ALLOW,        // 可以
+    DISALLOW,     //  不可以
 
     // Unrecognized field; kept as-is. High number so that additions to the
     // enumeration above does not change the serialization.
-    UNKNOWN = 128
+    UNKNOWN = 128     // 未知
   };
 
   ParsedRobotsKey() : type_(UNKNOWN) {}
@@ -247,6 +293,7 @@ class ParsedRobotsKey {
   KeyType type() const { return type_; }
 
   // If this is an unknown key, get the text.
+  // 未知文本
   absl::string_view GetUnknownText() const;
 
  private:
@@ -262,6 +309,7 @@ class ParsedRobotsKey {
 void EmitKeyValueToHandler(int line, const ParsedRobotsKey& key,
                            absl::string_view value,
                            RobotsParseHandler* handler) {
+  // 发送信号，触发回调
   typedef ParsedRobotsKey Key;
   switch (key.type()) {
     case Key::USER_AGENT:     handler->HandleUserAgent(line, value); break;
@@ -275,34 +323,44 @@ void EmitKeyValueToHandler(int line, const ParsedRobotsKey& key,
   }
 }
 
+// 解析器
 class RobotsTxtParser {
  public:
   typedef ParsedRobotsKey Key;
 
+  // 构造函数
   RobotsTxtParser(absl::string_view robots_body,
                   RobotsParseHandler* handler)
       : robots_body_(robots_body), handler_(handler) {
   }
 
+  // 解析函数
   void Parse();
 
  private:
+  // 提取出kv
   static bool GetKeyAndValueFrom(char ** key, char **value, char *line);
+
+  // 去除空白
   static void StripWhitespaceSlowly(char ** s);
 
   void ParseAndEmitLine(int current_line, char* line);
+
+  // 是否需要转义
   bool NeedEscapeValueForKey(const Key& key);
 
-  absl::string_view robots_body_;
-  RobotsParseHandler* const handler_;
+  absl::string_view robots_body_;       // 全文
+  RobotsParseHandler* const handler_;   // 回调
 };
 
 bool RobotsTxtParser::NeedEscapeValueForKey(const Key& key) {
   switch (key.type()) {
     case RobotsTxtParser::Key::USER_AGENT:
     case RobotsTxtParser::Key::SITEMAP:
+      // 不需要转义
       return false;
     default:
+      // 默认需要转义
       return true;
   }
 }
@@ -317,6 +375,7 @@ bool RobotsTxtParser::NeedEscapeValueForKey(const Key& key) {
 bool RobotsTxtParser::GetKeyAndValueFrom(char ** key, char ** value,
                                          char * line) {
   // Remove comments from the current robots.txt line.
+  // 截断注释
   char* const comment = strchr(line, '#');
   if (nullptr != comment) {
           *comment = '\0';
@@ -329,6 +388,8 @@ bool RobotsTxtParser::GetKeyAndValueFrom(char ** key, char ** value,
   if (nullptr == sep) {
     // Google-specific optimization: some people forget the colon, so we need to
     // accept whitespace in its stead.
+    // <key>[ \t]*[ \t]*<value>
+    // 特殊处理漏写冒号的情况
     static const char * const kWhite = " \t";
     sep = strpbrk(line, kWhite);
     if (nullptr != sep) {
@@ -344,33 +405,45 @@ bool RobotsTxtParser::GetKeyAndValueFrom(char ** key, char ** value,
     }
   }
   if (nullptr == sep) {
+    // 找不到分隔符
     return false;                     // Couldn't find a separator.
   }
 
+  // 获取key
   *key = line;                        // Key starts at beginning of line.
   *sep = '\0';                        // And stops at the separator.
   StripWhitespaceSlowly(key);         // Get rid of any trailing whitespace.
 
+  // 判断key 的有效性
   if (strlen(*key) > 0) {
+    // 获取value
     *value = 1 + sep;                 // Value starts after the separator.
     StripWhitespaceSlowly(value);     // Get rid of any leading whitespace.
     return true;
   }
+
+  // 失败
   return false;
 }
 
 void RobotsTxtParser::ParseAndEmitLine(int current_line, char* line) {
+  // 提取kv
   char* string_key;
   char* value;
   if (!GetKeyAndValueFrom(&string_key, &value, line)) {
+    // 提取失败
     return;
   }
 
+  // 解析key
   Key key;
   key.Parse(string_key);
+
   if (NeedEscapeValueForKey(key)) {
+    // 如果需要转义，尝试做下转义
     char* escaped_value = nullptr;
     const bool is_escaped = MaybeEscapePattern(value, &escaped_value);
+
     EmitKeyValueToHandler(current_line, key, escaped_value, handler_);
     if (is_escaped) delete[] escaped_value;
   } else {
@@ -387,7 +460,9 @@ void RobotsTxtParser::Parse() {
   // that max url length of 2KB. We want some padding for
   // UTF-8 encoding/nulls/etc. but a much smaller bound would be okay as well.
   // If so, we can ignore the chars on a line past that.
+  // 最大行宽
   const int kMaxLineLen = 2083 * 8;
+
   // Allocate a buffer used to process the current line.
   char* const line_buffer = new char[kMaxLineLen];
   // last_line_pos is the last writeable pos within the line array
@@ -397,30 +472,37 @@ void RobotsTxtParser::Parse() {
   int line_num = 0;
   size_t bom_pos = 0;
   bool last_was_carriage_return = false;
+
+  // 开始了
   handler_->HandleRobotsStart();
 
-      {
-        for (const unsigned char ch : robots_body_) {
+  {
+    for (const unsigned char ch : robots_body_) {
       ABSL_ASSERT(line_pos <= line_buffer_end);
       // Google-specific optimization: UTF-8 byte order marks should never
       // appear in a robots.txt file, but they do nevertheless. Skipping
       // possible BOM-prefix in the first bytes of the input.
       if (bom_pos < sizeof(utf_bom) && ch == utf_bom[bom_pos++]) {
+        // 跳过UT8 BOM
         continue;
       }
+
       bom_pos = sizeof(utf_bom);
       if (ch != 0x0A && ch != 0x0D) {  // Non-line-ending char case.
         // Put in next spot on current line, as long as there's room.
+        // 没有到行尾
         if (line_pos < line_buffer_end) {
           *(line_pos++) = ch;
         }
       } else {                         // Line-ending character char case.
+        // 断行
         *line_pos = '\0';
         // Only emit an empty line if this was not due to the second character
         // of the DOS line-ending \r\n .
         const bool is_CRLF_continuation =
             (line_pos == line_buffer) && last_was_carriage_return && ch == 0x0A;
         if (!is_CRLF_continuation) {
+          // 不是空行，触发回调
           ParseAndEmitLine(++line_num, line_buffer);
         }
         line_pos = line_buffer;
@@ -428,8 +510,12 @@ void RobotsTxtParser::Parse() {
       }
     }
   }
+
+  // 结束行
   *line_pos = '\0';
   ParseAndEmitLine(++line_num, line_buffer);
+
+  // 结束了
   handler_->HandleRobotsEnd();
   delete [] line_buffer;
 }
@@ -438,14 +524,15 @@ void RobotsTxtParser::Parse() {
 // characters matched by a pattern is returned as its match priority.
 class LongestMatchRobotsMatchStrategy : public RobotsMatchStrategy {
  public:
+  // 默认
   LongestMatchRobotsMatchStrategy() { }
 
   // Disallow copying and assignment.
-  LongestMatchRobotsMatchStrategy(const LongestMatchRobotsMatchStrategy&) =
-      delete;
-  LongestMatchRobotsMatchStrategy& operator=(
-      const LongestMatchRobotsMatchStrategy&) = delete;
+  // 关闭
+  LongestMatchRobotsMatchStrategy(const LongestMatchRobotsMatchStrategy&) = delete;
+  LongestMatchRobotsMatchStrategy& operator=( const LongestMatchRobotsMatchStrategy&) = delete;
 
+  // 是否命中允许与禁止，返回优先级，优先为命中长度
   int MatchAllow(absl::string_view path, absl::string_view pattern) override;
   int MatchDisallow(absl::string_view path, absl::string_view pattern) override;
 };
@@ -481,6 +568,7 @@ void RobotsMatcher::InitUserAgentsAndPath(
   // these pointers doesn't cause a memory leak.
   path_ = path;
   ABSL_ASSERT('/' == *path_);
+
   user_agents_ = user_agents;
 }
 
@@ -489,9 +577,16 @@ bool RobotsMatcher::AllowedByRobots(absl::string_view robots_body,
                                     const std::string& url) {
   // The url is not normalized (escaped, percent encoded) here because the user
   // is asked to provide it in escaped form already.
+  // 提取路径
   std::string path = GetPathParamsQuery(url);
+
+  // 初始化
   InitUserAgentsAndPath(user_agents, path.c_str());
+
+  // 解析
   ParseRobotsTxt(robots_body, this);
+
+  // 看是否可以爬取
   return !disallow();
 }
 
@@ -505,18 +600,23 @@ bool RobotsMatcher::OneAgentAllowedByRobots(absl::string_view robots_txt,
 
 bool RobotsMatcher::disallow() const {
   if (allow_.specific.priority() > 0 || disallow_.specific.priority() > 0) {
+    // 指定UA，允许与禁止都命中，看优先级
     return (disallow_.specific.priority() > allow_.specific.priority());
   }
 
   if (ever_seen_specific_agent_) {
     // Matching group for user-agent but either without disallow or empty one,
     // i.e. priority == 0.
+    // 如果指定过UA，但是没有允许或者禁止，默认允许
     return false;
   }
 
   if (disallow_.global.priority() > 0 || allow_.global.priority() > 0) {
+    // 全局，允许与禁止都命中，看优先级
     return disallow_.global.priority() > allow_.global.priority();
   }
+
+  // 默认允许
   return false;
 }
 
@@ -524,14 +624,18 @@ bool RobotsMatcher::disallow_ignore_global() const {
   if (allow_.specific.priority() > 0 || disallow_.specific.priority() > 0) {
     return disallow_.specific.priority() > allow_.specific.priority();
   }
+
   return false;
 }
 
+// 优先命中指定UA，允许与禁止冲突看优先级
 const int RobotsMatcher::matching_line() const {
   if (ever_seen_specific_agent_) {
-    return Match::HigherPriorityMatch(disallow_.specific, allow_.specific)
-        .line();
+    // 优先命中指定UA
+    return Match::HigherPriorityMatch(disallow_.specific, allow_.specific).line();
   }
+
+  // 其次全局
   return Match::HigherPriorityMatch(disallow_.global, allow_.global).line();
 }
 
@@ -552,10 +656,12 @@ void RobotsMatcher::HandleRobotsStart() {
 /*static*/ absl::string_view RobotsMatcher::ExtractUserAgent(
     absl::string_view user_agent) {
   // Allowed characters in user-agent are [a-zA-Z_-].
+  // 找终止位置
   const char* end = user_agent.data();
   while (absl::ascii_isalpha(*end) || *end == '-' || *end == '_') {
     ++end;
   }
+
   return user_agent.substr(0, end - user_agent.data());
 }
 
@@ -567,6 +673,7 @@ void RobotsMatcher::HandleRobotsStart() {
 void RobotsMatcher::HandleUserAgent(int line_num,
                                     absl::string_view user_agent) {
   if (seen_separator_) {
+    // 清理一下历史状态
     seen_specific_agent_ = seen_global_agent_ = seen_separator_ = false;
   }
 
@@ -574,11 +681,17 @@ void RobotsMatcher::HandleUserAgent(int line_num,
   // in a user-agent record is still regarded a global rule.
   if (user_agent.length() >= 1 && user_agent[0] == '*' &&
       (user_agent.length() == 1 || isspace(user_agent[1]))) {
+    // *
+    // * ....
+    // 所有UA
     seen_global_agent_ = true;
   } else {
+    // 提取UA
     user_agent = ExtractUserAgent(user_agent);
+
     for (const auto& agent : *user_agents_) {
       if (absl::EqualsIgnoreCase(user_agent, agent)) {
+        // 命中特定UA
         ever_seen_specific_agent_ = seen_specific_agent_ = true;
         break;
       }
@@ -587,10 +700,14 @@ void RobotsMatcher::HandleUserAgent(int line_num,
 }
 
 void RobotsMatcher::HandleAllow(int line_num, absl::string_view value) {
+  // 没有解析过UA，忽略
   if (!seen_any_agent()) return;
+
   seen_separator_ = true;
   const int priority = match_strategy_->MatchAllow(path_, value);
+
   if (priority >= 0) {
+    // 根据命中情况，尝试更新
     if (seen_specific_agent_) {
       if (allow_.specific.priority() < priority) {
         allow_.specific.Set(priority, line_num);
@@ -607,12 +724,13 @@ void RobotsMatcher::HandleAllow(int line_num, absl::string_view value) {
     const size_t slash_pos = value.find_last_of('/');
 
     if (slash_pos != absl::string_view::npos &&
-        absl::StartsWith(absl::ClippedSubstr(value, slash_pos),
-                            "/index.htm")) {
+      // 自动处理xxxx/index.htm.......
+      absl::StartsWith(absl::ClippedSubstr(value, slash_pos), "/index.htm")) {
       const int len = slash_pos + 1;
       absl::FixedArray<char> newpattern(len + 1);
       strncpy(newpattern.data(), value.data(), len);
       newpattern[len] = '$';
+
       HandleAllow(line_num,
                   absl::string_view(newpattern.data(), newpattern.size()));
     }
@@ -620,10 +738,16 @@ void RobotsMatcher::HandleAllow(int line_num, absl::string_view value) {
 }
 
 void RobotsMatcher::HandleDisallow(int line_num, absl::string_view value) {
+  // 没有解析过UA，忽略
   if (!seen_any_agent()) return;
+
+  // 查询命中情况
   seen_separator_ = true;
   const int priority = match_strategy_->MatchDisallow(path_, value);
+
   if (priority >= 0) {
+    // 根据命中情况，尝试更新
+
     if (seen_specific_agent_) {
       if (disallow_.specific.priority() < priority) {
         disallow_.specific.Set(priority, line_num);
@@ -647,7 +771,9 @@ int LongestMatchRobotsMatchStrategy::MatchDisallow(absl::string_view path,
   return Matches(path, pattern) ? pattern.length() : -1;
 }
 
-void RobotsMatcher::HandleSitemap(int line_num, absl::string_view value) {}
+void RobotsMatcher::HandleSitemap(int line_num, absl::string_view value) {
+  // 不处理
+}
 
 void RobotsMatcher::HandleUnknownAction(int line_num, absl::string_view action,
                                         absl::string_view value) {}
@@ -655,14 +781,19 @@ void RobotsMatcher::HandleUnknownAction(int line_num, absl::string_view action,
 void ParsedRobotsKey::Parse(absl::string_view key) {
   key_text_ = absl::string_view();
   if (KeyIsUserAgent(key)) {
+    // UA
     type_ = USER_AGENT;
   } else if (KeyIsAllow(key)) {
+    // 可以
     type_ = ALLOW;
   } else if (KeyIsDisallow(key)) {
+    // 不可以
     type_ = DISALLOW;
   } else if (KeyIsSitemap(key)) {
+    // 站点地图
     type_ = SITEMAP;
   } else {
+    // 未知
     type_ = UNKNOWN;
     key_text_ = key;
   }
@@ -675,18 +806,23 @@ absl::string_view ParsedRobotsKey::GetUnknownText() const {
 
 bool ParsedRobotsKey::KeyIsUserAgent(absl::string_view key) {
   return (
+      // 正规
       absl::StartsWithIgnoreCase(key, "user-agent") ||
+      // 错别字
       (kAllowFrequentTypos && (absl::StartsWithIgnoreCase(key, "useragent") ||
                                absl::StartsWithIgnoreCase(key, "user agent"))));
 }
 
 bool ParsedRobotsKey::KeyIsAllow(absl::string_view key) {
+  // 正规
   return absl::StartsWithIgnoreCase(key, "allow");
 }
 
 bool ParsedRobotsKey::KeyIsDisallow(absl::string_view key) {
   return (
+      // 正规
       absl::StartsWithIgnoreCase(key, "disallow") ||
+      // 错别字
       (kAllowFrequentTypos && ((absl::StartsWithIgnoreCase(key, "dissallow")) ||
                                (absl::StartsWithIgnoreCase(key, "dissalow")) ||
                                (absl::StartsWithIgnoreCase(key, "disalow")) ||
@@ -695,6 +831,7 @@ bool ParsedRobotsKey::KeyIsDisallow(absl::string_view key) {
 }
 
 bool ParsedRobotsKey::KeyIsSitemap(absl::string_view key) {
+  // 正规
   return ((absl::StartsWithIgnoreCase(key, "sitemap")) ||
           (absl::StartsWithIgnoreCase(key, "site-map")));
 }
